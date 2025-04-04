@@ -28,7 +28,7 @@ func New(cfg *config.Config) *Server {
 		router: router,
 		config: cfg,
 		httpServer: &http.Server{
-			Addr:    ":" + cfg.ServerPort,
+			Addr:    ":" + cfg.Server.Port,
 			Handler: router,
 		},
 	}

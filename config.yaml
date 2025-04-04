@@ -1,0 +1,24 @@
+server:
+  port: "8080"
+  readTimeout: 10s
+  writeTimeout: 10s
+
+mongodb:
+  uri: "mongodb://localhost:27017"
+  database: "gomail"
+  timeout: 10s
+  connectionTimeout: 10s
+
+smtp:
+  host: "smtp.example.com"
+  port: "587"
+  username: ""
+  password: ""
+  from: "no-reply@example.com"
+  tlsEnable: true
+
+jwt:
+  secret: "your_jwt_secret_key_change_in_production"
+  expiresIn: 24h
+
+logLevel: "info" 

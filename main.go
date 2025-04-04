@@ -25,7 +25,7 @@ func main() {
 
 	// Start server in a goroutine
 	go func() {
-		log.Printf("Starting server on port %s", cfg.ServerPort)
+		log.Printf("Starting server on port %s", cfg.Server.Port)
 		if err := srv.Run(); err != nil && err != http.ErrServerClosed {
 			log.Fatalf("Failed to start server: %v", err)
 		}
