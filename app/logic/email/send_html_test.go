@@ -1,7 +1,3 @@
-// email/send_html_test.go
-//go:build unit
-// +build unit
-
 package email
 
 import (
