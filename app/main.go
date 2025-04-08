@@ -9,23 +9,21 @@ import (
 	"syscall"
 	"time"
 
-	"GoMail/src/config"
-	"GoMail/src/server"
+	"GoMail/app/config"
+	"GoMail/app/server"
 )
 
 func main() {
 	// Initialize configuration
-	cfg, err := config.Load()
-	if err != nil {
-		log.Fatalf("Failed to load configuration: %v", err)
-	}
+	config.Init()
+	cfg := config.Get()
 
 	// Setup server
 	srv := server.New(cfg)
 
 	// Start server in a goroutine
 	go func() {
-		log.Printf("Starting server on port %s", cfg.ServerPort)
+		log.Printf("Starting server on port %s (environment: %s)", cfg.Server.Port, cfg.Env)
 		if err := srv.Run(); err != nil && err != http.ErrServerClosed {
 			log.Fatalf("Failed to start server: %v", err)
 		}
@@ -44,6 +42,11 @@ func main() {
 	// Gracefully shutdown the server
 	if err := srv.Shutdown(ctx); err != nil {
 		log.Fatalf("Server forced to shutdown: %v", err)
+	}
+
+	// Disconnect MongoDB client
+	if err := cfg.Disconnect(ctx); err != nil {
+		log.Printf("Warning: Error disconnecting from MongoDB: %v", err)
 	}
 
 	log.Println("Server exiting")
