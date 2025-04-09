@@ -1,10 +1,42 @@
 package middleware
 
 import (
+	"net/http"
 	"time"
 
 	"github.com/gin-gonic/gin"
 )
+
+// Middleware defines the interface for all middleware functions
+type Middleware interface {
+	VerifyAuthToken() gin.HandlerFunc
+}
+
+// middleware implements the Middleware interface
+type middleware struct{}
+
+// New creates a new middleware instance
+func New() Middleware {
+	return &middleware{}
+}
+
+// VerifyAuthToken is a middleware function that verifies the auth token
+func (m *middleware) VerifyAuthToken() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		// Get the auth token from the Authorization header
+		token := c.GetHeader("Authorization")
+		if token == "" {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
+				"error": "Authorization token required",
+			})
+			return
+		}
+
+		// TODO: Implement token verification logic
+		// For now, we'll just proceed with the request
+		c.Next()
+	}
+}
 
 // Logger is a middleware function that logs the request
 func Logger() gin.HandlerFunc {
