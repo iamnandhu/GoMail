@@ -7,8 +7,6 @@ import (
 
 	"GoMail/app/config"
 	"GoMail/app/handler"
-
-	// "GoMail/app/logic"
 	"GoMail/app/middleware"
 
 	"github.com/gin-contrib/cors"
@@ -20,20 +18,27 @@ type Server struct {
 	router     *gin.Engine
 	httpServer *http.Server
 	config     *config.Config
-	handler    *handler.Handler
 }
 
 // New creates a new server instance
 func New(cfg *config.Config) *Server {
 	router := gin.Default()
 
-	// Create services
-	// TODO: Uncomment and implement EmailService
-	// emailService := logic.NewEmailService(cfg)
+	// Setup middlewares
+	corsConfig := configureCORS(cfg)
+	router.Use(cors.New(corsConfig))
+	router.Use(middleware.Logger())
+	router.Use(middleware.Recovery())
 
-	// Create handlers
-	// TODO: Update handler initialization with appropriate services
-	h := &handler.Handler{} // Temporary placeholder
+	// Health check
+	router.GET("/health", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{"status": "ok"})
+	})
+
+	// Setup routes
+	mw := middleware.New()
+	handler.InitPublicRoutes(router)
+	handler.InitProtectedRoutes(router, mw)
 
 	// Initialize the server
 	server := &Server{
@@ -43,14 +48,7 @@ func New(cfg *config.Config) *Server {
 			Addr:    ":" + cfg.Server.Port,
 			Handler: router,
 		},
-		handler: h,
 	}
-
-	// Setup middlewares
-	server.setupMiddlewares()
-
-	// Setup routes
-	server.setupRoutes()
 
 	return server
 }
@@ -99,31 +97,6 @@ func configureCORS(cfg *config.Config) cors.Config {
 	}
 
 	return corsConfig
-}
-
-// setupMiddlewares adds middleware to the router
-func (s *Server) setupMiddlewares() {
-	// Add CORS middleware
-	s.router.Use(cors.New(configureCORS(s.config)))
-
-	// Add other global middlewares
-	s.router.Use(middleware.Logger())
-	s.router.Use(middleware.Recovery())
-}
-
-// setupRoutes configures all the routes
-func (s *Server) setupRoutes() {
-	// Health check
-	s.router.GET("/health", func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"status": "ok"})
-	})
-
-	// API routes
-	api := s.router.Group("/api/v1")
-	{
-		// Register handlers
-		s.handler.RegisterRoutes(api)
-	}
 }
 
 // Run starts the HTTP server
