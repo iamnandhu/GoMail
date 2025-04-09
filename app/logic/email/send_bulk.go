@@ -75,14 +75,16 @@ func (s *emailService) SendBulk(ctx context.Context, req SendBulkEmailRequest) (
 			}
 			
 			// Log the email asynchronously
-			go func() {
-				// Create a new context for the async operation
-				asyncCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-				defer cancel()
-				
-				// Log the email
-				_ = s.repo.SaveEmailLog(asyncCtx, emailLog)
-			}()
+			if s.repo != nil {
+				go func() {
+					// Create a new context for the async operation
+					asyncCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+					defer cancel()
+					
+					// Log the email
+					_ = s.repo.SaveEmailLog(asyncCtx, emailLog)
+				}()
+			}
 		}(i, email)
 	}
 	

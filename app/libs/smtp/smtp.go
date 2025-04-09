@@ -150,6 +150,9 @@ func (c *smtpClient) connectSingle() error {
 func (c *smtpClient) createConnection() (*smtp.Client, error) {
 	// Format server address
 	addr := fmt.Sprintf("%s:%s", c.config.Host, c.config.Port)
+	
+	// Debug: Print SMTP configuration
+	fmt.Printf("DEBUG: SMTP Config - Host: %s, Port: %s\n", c.config.Host, c.config.Port)
 
 	// Connect to the SMTP server
 	var client *smtp.Client
@@ -161,6 +164,9 @@ func (c *smtpClient) createConnection() (*smtp.Client, error) {
 	}
 
 	if c.config.UseTLS {
+		// Debug: Print TLS connection info
+		fmt.Printf("DEBUG: Connecting with TLS to %s\n", addr)
+		
 		// Connect with TLS
 		tlsConfig := &tls.Config{
 			ServerName:         c.config.Host,
@@ -168,24 +174,31 @@ func (c *smtpClient) createConnection() (*smtp.Client, error) {
 		}
 		conn, err := tls.DialWithDialer(dialer, "tcp", addr, tlsConfig)
 		if err != nil {
+			fmt.Printf("DEBUG: TLS connection error: %v\n", err)
 			return nil, fmt.Errorf("failed to connect to SMTP server with TLS: %w", err)
 		}
 		client, err = smtp.NewClient(conn, c.config.Host)
 	} else {
+		// Debug: Print non-TLS connection info
+		fmt.Printf("DEBUG: Connecting without TLS to %s\n", addr)
+		
 		// Connect without TLS
 		conn, err := dialer.Dial("tcp", addr)
 		if err != nil {
+			fmt.Printf("DEBUG: Connection error: %v\n", err)
 			return nil, fmt.Errorf("failed to connect to SMTP server: %w", err)
 		}
 		client, err = smtp.NewClient(conn, c.config.Host)
 
 		// Start TLS if required
 		if c.config.StartTLS {
+			fmt.Printf("DEBUG: Starting TLS after connection\n")
 			tlsConfig := &tls.Config{
 				ServerName:         c.config.Host,
 				InsecureSkipVerify: c.config.InsecureSkipVerify,
 			}
 			if err = client.StartTLS(tlsConfig); err != nil {
+				fmt.Printf("DEBUG: StartTLS error: %v\n", err)
 				client.Close()
 				return nil, fmt.Errorf("failed to start TLS: %w", err)
 			}
@@ -193,18 +206,23 @@ func (c *smtpClient) createConnection() (*smtp.Client, error) {
 	}
 
 	if err != nil {
+		fmt.Printf("DEBUG: Client creation error: %v\n", err)
 		return nil, fmt.Errorf("failed to connect to SMTP server: %w", err)
 	}
 
 	// Authenticate if credentials are provided
 	if c.config.Username != "" && c.config.Password != "" {
+		fmt.Printf("DEBUG: Authenticating with username: %s\n", c.config.Username)
 		auth := smtp.PlainAuth("", c.config.Username, c.config.Password, c.config.Host)
 		if err := client.Auth(auth); err != nil {
+			fmt.Printf("DEBUG: Authentication error: %v\n", err)
 			client.Close()
 			return nil, fmt.Errorf("SMTP authentication failed: %w", err)
 		}
+		fmt.Printf("DEBUG: Authentication successful\n")
 	}
 
+	fmt.Printf("DEBUG: SMTP connection established successfully\n")
 	return client, nil
 }
 

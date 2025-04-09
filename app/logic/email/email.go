@@ -2,6 +2,8 @@ package email
 
 import (
 	"context"
+	"fmt"
+	"time"
 
 	"GoMail/app/config"
 	"GoMail/app/libs/smtp"
@@ -31,7 +33,39 @@ type emailService struct {
 }
 
 // NewEmailService creates a new email service
-func NewEmailService(cfg *config.Config, client smtp.SMTPClient, repo repository.Repository) Email {
+func NewEmailService(cfg *config.Config, repo repository.Repository) Email {
+	// Debug: Print SMTP config from config object
+	fmt.Printf("DEBUG: Creating email service with SMTP config:\n")
+	fmt.Printf("  Host: %s\n", cfg.SMTP.Host)
+	fmt.Printf("  Port: %s\n", cfg.SMTP.Port)
+	fmt.Printf("  Username: %s\n", cfg.SMTP.Username)
+	fmt.Printf("  From: %s\n", cfg.SMTP.From)
+	fmt.Printf("  TLS Enabled: %v\n", cfg.SMTP.TLSEnable)
+	
+	// Create SMTP config from application config
+	smtpConfig := smtp.Config{
+		Host:               cfg.SMTP.Host,
+		Port:               cfg.SMTP.Port,
+		Username:           cfg.SMTP.Username,
+		Password:           cfg.SMTP.Password,
+		From:               cfg.SMTP.From,
+		UseTLS:             false,     // Don't use immediate TLS
+		StartTLS:           true,      // Use StartTLS for encryption
+		InsecureSkipVerify: true,      // Skip verification for testing
+		ConnectTimeout:     10 * time.Second,
+		PoolSize:           5,
+		RetryAttempts:      3,
+		RetryDelay:         2 * time.Second,
+		MaxConcurrent:      10,
+	}
+	
+	// Debug: Print SMTP config after conversion
+	fmt.Printf("DEBUG: Created SMTP config with Host=%s, Port=%s, UseTLS=%v, StartTLS=%v\n", 
+		smtpConfig.Host, smtpConfig.Port, smtpConfig.UseTLS, smtpConfig.StartTLS)
+	
+	// Create SMTP client with config
+	client := smtp.NewClient(smtpConfig)
+	
 	return &emailService{
 		client: client,
 		repo:   repo,

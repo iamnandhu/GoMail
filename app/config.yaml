@@ -6,21 +6,22 @@ server:
   readTimeout: 10s
   writeTimeout: 10s
 
+
 mongodb:
-  uri: "mongodb://localhost:27017"
-  username: ""
-  password: ""
+  uri: "mongodb://localhost:27017/"
+  username: "username"
+  password: "123"
   database: "gomail"
   endpoint: "localhost:27017"
   timeout: 10s
   connectionTimeout: 10s
 
 smtp:
-  host: "smtp.example.com"
+  host: "smtp.example.net"
   port: "587"
-  username: ""
-  password: ""
-  from: "no-reply@example.com"
+  username: "apikey"
+  password: "password"
+  from: "noreply@nandhu.wiki"
   tlsEnable: true
 
 jwt:
