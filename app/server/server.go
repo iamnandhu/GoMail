@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"log"
 	"net/http"
 	"time"
 
@@ -23,6 +24,7 @@ type Server struct {
 	httpServer *http.Server
 	config     *config.Config
 	db         *mongo.Database
+	repo       repository.Repository
 }
 
 // New creates a new server instance
@@ -34,6 +36,7 @@ func New(cfg *config.Config) *Server {
 	router.Use(cors.New(corsConfig))
 	router.Use(middleware.Logger())
 	router.Use(middleware.Recovery())
+	router.Use(middleware.SecurityHeaders()) // Add security headers to all responses
 
 	// Get MongoDB client from config and create database instance
 	mongoClient := cfg.MongoDB.Client
@@ -57,14 +60,25 @@ func New(cfg *config.Config) *Server {
 	})
 
 	// Setup routes with the emailHandler instance
-	handler.InitPublicRoutes(router, emailHandler)
+	handler.InitPublicRoutes(router, emailHandler, repo)
 	handler.InitProtectedRoutes(router, emailHandler)
+
+	// Initialize token indexes for token revocation support
+	if cfg.JWT.EnableTokenRevoking {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		
+		if err := repo.InitTokenIndexes(ctx); err != nil {
+			log.Printf("WARNING: Failed to initialize token indexes: %v", err)
+		}
+	}
 
 	// Initialize the server
 	server := &Server{
 		router: router,
 		config: cfg,
 		db:     db,
+		repo:   repo,
 		httpServer: &http.Server{
 			Addr:         ":" + cfg.Server.Port,
 			Handler:      router,
