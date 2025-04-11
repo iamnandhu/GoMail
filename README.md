@@ -1,7 +1,7 @@
 <div align="center">
 
 # **GoMail** [![Go](https://img.shields.io/badge/Go-00ADD8?style=for-the-badge&logo=go&logoColor=white)](https://golang.org/)
-
+GoMail is a lightweight, high-performance SMTP client API built in Go. It provides a simple interface for sending emails with features like connection pooling, retries, and comprehensive email tracking.
 </div>
 
 <div align="center">
@@ -12,7 +12,7 @@
 
 </div>
 
-GoMail is a lightweight, high-performance SMTP client API built in Go. It provides a simple interface for sending emails with features like connection pooling, retries, and comprehensive email tracking.
+
 
 ## ✨ Features
 
