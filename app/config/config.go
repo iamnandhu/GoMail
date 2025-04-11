@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strconv"
 	"time"
 
 	"go.mongodb.org/mongo-driver/mongo"
@@ -51,12 +52,13 @@ type MongoDBConfig struct {
 
 // SMTPConfig holds SMTP server configuration
 type SMTPConfig struct {
-	Host        string `yaml:"host" json:"host"`
-	Port        string `yaml:"port" json:"port"`
-	Username    string `yaml:"username" json:"username"`
-	Password    string `yaml:"password" json:"password"`
-	From        string `yaml:"from" json:"from"`
-	UseStartTLS bool   `yaml:"useStartTLS" json:"useStartTLS"`
+	Host          string `yaml:"host" json:"host"`
+	Port          string `yaml:"port" json:"port"`
+	Username      string `yaml:"username" json:"username"`
+	Password      string `yaml:"password" json:"password"`
+	From          string `yaml:"from" json:"from"`
+	UseStartTLS   bool   `yaml:"useStartTLS" json:"useStartTLS"`
+	MaxConcurrent int    `yaml:"maxConcurrent" json:"maxConcurrent"`
 }
 
 // JWTConfig holds JWT authentication configuration
@@ -181,6 +183,11 @@ func overwriteConfigFromEnv() error {
 	}
 	if useStartTLSStr := os.Getenv("SMTP_USE_STARTTLS"); useStartTLSStr != "" {
 		config.SMTP.UseStartTLS = useStartTLSStr == "true" || useStartTLSStr == "1" || useStartTLSStr == "yes"
+	}
+	if maxConcurrentStr := os.Getenv("SMTP_MAX_CONCURRENT"); maxConcurrentStr != "" {
+		if maxConcurrent, err := strconv.Atoi(maxConcurrentStr); err == nil {
+			config.SMTP.MaxConcurrent = maxConcurrent
+		}
 	}
 	
 	// JWT config

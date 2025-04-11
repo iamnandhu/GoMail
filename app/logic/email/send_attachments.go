@@ -31,17 +31,8 @@ func (s *emailService) SendWithAttachments(ctx context.Context, req SendWithAtta
 		CreatedAt:   time.Now(),
 	}
 	
-	// Log the email asynchronously if repository is available
-	if s.repo != nil {
-		go func() {
-			// Create a new context for the async operation
-			asyncCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
-			
-			// Log the email
-			_ = s.repo.SaveEmailLog(asyncCtx, emailLog)
-		}()
-	}
+	// Log the email asynchronously
+	s.logEmailAttempt(emailLog)
 	
 	// Return the response
 	if err != nil {

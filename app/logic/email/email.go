@@ -8,6 +8,7 @@ import (
 	"GoMail/app/config"
 	"GoMail/app/libs/smtp"
 	"GoMail/app/repository"
+	"GoMail/app/repository/models"
 )
 
 // Email defines the interface for email operations
@@ -41,6 +42,13 @@ func NewEmailService(cfg *config.Config, repo repository.Repository) Email {
 	fmt.Printf("  Username: %s\n", cfg.SMTP.Username)
 	fmt.Printf("  From: %s\n", cfg.SMTP.From)
 	fmt.Printf("  TLS Enabled: %v\n", cfg.SMTP.UseStartTLS)
+	fmt.Printf("  Max Concurrent: %v\n", cfg.SMTP.MaxConcurrent)
+	
+	// Set a default for MaxConcurrent if not specified
+	maxConcurrent := 10
+	if cfg.SMTP.MaxConcurrent > 0 {
+		maxConcurrent = cfg.SMTP.MaxConcurrent
+	}
 	
 	// Create SMTP config from application config
 	smtpConfig := smtp.Config{
@@ -49,19 +57,19 @@ func NewEmailService(cfg *config.Config, repo repository.Repository) Email {
 		Username:           cfg.SMTP.Username,
 		Password:           cfg.SMTP.Password,
 		From:               cfg.SMTP.From,
-		UseTLS:             false,     // Don't use immediate TLS
-		StartTLS:           cfg.SMTP.UseStartTLS,
-		InsecureSkipVerify: true,      // Skip verification for testing
+		UseTLS:             !cfg.SMTP.UseStartTLS, // Use TLS if not using StartTLS
+		StartTLS:           cfg.SMTP.UseStartTLS,  // Use StartTLS from config
+		InsecureSkipVerify: true,                  // Skip verification for testing
 		ConnectTimeout:     10 * time.Second,
 		PoolSize:           5,
 		RetryAttempts:      3,
 		RetryDelay:         2 * time.Second,
-		MaxConcurrent:      10,
+		MaxConcurrent:      maxConcurrent,
 	}
 	
 	// Debug: Print SMTP config after conversion
-	fmt.Printf("DEBUG: Created SMTP config with Host=%s, Port=%s, UseTLS=%v, StartTLS=%v\n", 
-		smtpConfig.Host, smtpConfig.Port, smtpConfig.UseTLS, smtpConfig.StartTLS)
+	fmt.Printf("DEBUG: Created SMTP config with Host=%s, Port=%s, UseTLS=%v, StartTLS=%v, MaxConcurrent=%v\n", 
+		smtpConfig.Host, smtpConfig.Port, smtpConfig.UseTLS, smtpConfig.StartTLS, smtpConfig.MaxConcurrent)
 	
 	// Create SMTP client with config
 	client := smtp.NewClient(smtpConfig)
@@ -71,4 +79,26 @@ func NewEmailService(cfg *config.Config, repo repository.Repository) Email {
 		repo:   repo,
 		config: cfg,
 	}
+}
+
+// logEmailAttempt logs an email attempt asynchronously
+func (s *emailService) logEmailAttempt(logData *models.EmailLog) {
+	// Only proceed if repository is available
+	if s.repo == nil {
+		return
+	}
+	
+	// Log the email asynchronously 
+	go func() {
+		// Create a new context for the async operation
+		asyncCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		
+		// Log the email
+		err := s.repo.SaveEmailLog(asyncCtx, logData)
+		if err != nil {
+			// Just log the error, don't propagate it
+			fmt.Printf("ERROR: Failed to log email: %v\n", err)
+		}
+	}()
 } 
