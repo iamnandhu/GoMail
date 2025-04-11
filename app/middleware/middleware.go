@@ -7,21 +7,8 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// Middleware defines the interface for all middleware functions
-type Middleware interface {
-	VerifyAuthToken() gin.HandlerFunc
-}
-
-// middleware implements the Middleware interface
-type middleware struct{}
-
-// New creates a new middleware instance
-func New() Middleware {
-	return &middleware{}
-}
-
 // VerifyAuthToken is a middleware function that verifies the auth token
-func (m *middleware) VerifyAuthToken() gin.HandlerFunc {
+func VerifyAuthToken() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// Get the auth token from the Authorization header
 		token := c.GetHeader("Authorization")
