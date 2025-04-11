@@ -14,13 +14,12 @@ func InitPublicRoutes(router *gin.Engine) {
 	
 	// Register public routes
 	auth.AddRoute(api, "/auth")
-	email.AddPublicRoute(api, "/email")
 }
 
 // InitProtectedRoutes initializes routes that require authentication
-func InitProtectedRoutes(router *gin.Engine, mw middleware.Middleware) {
+func InitProtectedRoutes(router *gin.Engine) {
 	api := router.Group("/api/v1")
-	api.Use(mw.VerifyAuthToken())
+	api.Use(middleware.VerifyAuthToken())
 	
 	// Register protected routes
 	email.AddProtectedRoute(api, "/email")

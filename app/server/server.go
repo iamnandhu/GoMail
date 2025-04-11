@@ -36,17 +36,18 @@ func New(cfg *config.Config) *Server {
 	})
 
 	// Setup routes
-	mw := middleware.New()
 	handler.InitPublicRoutes(router)
-	handler.InitProtectedRoutes(router, mw)
+	handler.InitProtectedRoutes(router)
 
 	// Initialize the server
 	server := &Server{
 		router: router,
 		config: cfg,
 		httpServer: &http.Server{
-			Addr:    ":" + cfg.Server.Port,
-			Handler: router,
+			Addr:         ":" + cfg.Server.Port,
+			Handler:      router,
+			ReadTimeout:  cfg.Server.ReadTimeout,
+			WriteTimeout: cfg.Server.WriteTimeout,
 		},
 	}
 
