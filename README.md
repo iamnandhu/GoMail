@@ -14,7 +14,7 @@ GoMail is a lightweight, high-performance SMTP client API built in Go. It provid
 
 
 
-## ✨ Features
+## Features
 
 - 🚀 **High Performance** - Connection pooling and concurrent email sending
 - 🔄 **Retry Mechanism** - Automatic retries for failed email attempts
@@ -24,7 +24,7 @@ GoMail is a lightweight, high-performance SMTP client API built in Go. It provid
 - 🔄 **Bulk Operations** - Send multiple emails in a single request
 - 🛠️ **Configurable** - Extensive configuration options via YAML or environment variables
 
-## 🏗️ Project Structure
+## Project Structure
 
 ```
 GoMail/
@@ -43,7 +43,7 @@ GoMail/
 └── go.mod                  # Go module file
 ```
 
-## 🚀 Getting Started
+## Getting Started
 
 ### Prerequisites
 
