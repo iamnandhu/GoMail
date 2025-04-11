@@ -63,8 +63,10 @@ type SMTPConfig struct {
 
 // JWTConfig holds JWT authentication configuration
 type JWTConfig struct {
-	Secret    string        `yaml:"secret" json:"secret"`
-	ExpiresIn time.Duration `yaml:"expiresIn" json:"expiresIn"`
+	Secret              string        `yaml:"secret" json:"secret"`
+	ExpiresIn           time.Duration `yaml:"expiresIn" json:"expiresIn"`
+	EnableTokenRevoking bool          `yaml:"enableTokenRevoking" json:"enableTokenRevoking"`
+	RevokedTokensTTL    time.Duration `yaml:"revokedTokensTTL" json:"revokedTokensTTL"`
 }
 
 // CorsConfig holds CORS configuration
@@ -113,6 +115,11 @@ func Init() (*Config, error) {
 	// Initialize MongoDB connection
 	if err := initMongoDB(); err != nil {
 		return nil, err
+	}
+	
+	// Set default values for token revocation if not set
+	if config.JWT.RevokedTokensTTL == 0 {
+		config.JWT.RevokedTokensTTL = 24 * time.Hour
 	}
 	
 	return config, nil
@@ -193,6 +200,9 @@ func overwriteConfigFromEnv() error {
 	// JWT config
 	if secret := os.Getenv("JWT_SECRET"); secret != "" {
 		config.JWT.Secret = secret
+	}
+	if enableTokenRevokingStr := os.Getenv("JWT_ENABLE_TOKEN_REVOKING"); enableTokenRevokingStr != "" {
+		config.JWT.EnableTokenRevoking = enableTokenRevokingStr == "true" || enableTokenRevokingStr == "1" || enableTokenRevokingStr == "yes"
 	}
 
 	// Load JSON configuration from GOMAIL_CONFIG env var if it exists
