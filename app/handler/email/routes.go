@@ -1,21 +1,11 @@
 package email
 
 import (
-	"GoMail/app/config"
-	"GoMail/app/logic/email"
-
 	"github.com/gin-gonic/gin"
 )
 
 // AddPublicRoute adds email routes that don't require authentication
-func AddPublicRoute(router *gin.RouterGroup, path string) {
-	// Initialize the email service directly here
-	cfg := config.Get()
-	
-	// Create the email service
-	emailService := email.NewEmailService(cfg, nil)
-	handler := NewHandler(emailService)
-
+func AddPublicRoute(router *gin.RouterGroup, path string, handler *Handler) {
 	emailGroup := router.Group(path)
 	{
 		emailGroup.GET("/status", handler.getEmailStatus)
@@ -23,14 +13,7 @@ func AddPublicRoute(router *gin.RouterGroup, path string) {
 }
 
 // AddProtectedRoute adds email routes that require authentication
-func AddProtectedRoute(router *gin.RouterGroup, path string) {
-	// Initialize the email service directly here
-	cfg := config.Get()
-	
-	// Create the email service
-	emailService := email.NewEmailService(cfg, nil)
-	handler := NewHandler(emailService)
-
+func AddProtectedRoute(router *gin.RouterGroup, path string, handler *Handler) {
 	emailGroup := router.Group(path)
 	{
 		emailGroup.POST("/send", handler.sendEmail)

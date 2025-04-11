@@ -7,10 +7,14 @@ import (
 
 	"GoMail/app/config"
 	"GoMail/app/handler"
+	"GoMail/app/handler/email"
+	emailLogic "GoMail/app/logic/email"
 	"GoMail/app/middleware"
+	"GoMail/app/repository"
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
+	"go.mongodb.org/mongo-driver/mongo"
 )
 
 // Server represents the HTTP server
@@ -18,6 +22,7 @@ type Server struct {
 	router     *gin.Engine
 	httpServer *http.Server
 	config     *config.Config
+	db         *mongo.Database
 }
 
 // New creates a new server instance
@@ -30,19 +35,36 @@ func New(cfg *config.Config) *Server {
 	router.Use(middleware.Logger())
 	router.Use(middleware.Recovery())
 
+	// Get MongoDB client from config and create database instance
+	mongoClient := cfg.MongoDB.Client
+	if mongoClient == nil {
+		panic("MongoDB client not initialized. Make sure to call config.Init() first")
+	}
+	db := mongoClient.Database(cfg.MongoDB.Database)
+	
+	// Initialize repository
+	repo := repository.New(&repository.DB{MongoDB: db})
+	
+	// Initialize email service
+	emailService := emailLogic.NewEmailService(cfg, repo)
+	
+	// Create email handler
+	emailHandler := email.NewHandler(emailService)
+
 	// Health check
 	router.GET("/health", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"status": "ok"})
 	})
 
-	// Setup routes
-	handler.InitPublicRoutes(router)
-	handler.InitProtectedRoutes(router)
+	// Setup routes with the emailHandler instance
+	handler.InitPublicRoutes(router, emailHandler)
+	handler.InitProtectedRoutes(router, emailHandler)
 
 	// Initialize the server
 	server := &Server{
 		router: router,
 		config: cfg,
+		db:     db,
 		httpServer: &http.Server{
 			Addr:         ":" + cfg.Server.Port,
 			Handler:      router,
