@@ -3,12 +3,14 @@ package smtp
 import (
 	"context"
 	"crypto/tls"
+	"encoding/base64"
 	"errors"
 	"fmt"
+	"log"
 	"net"
+	"net/mail"
 	"net/smtp"
 	"strings"
-	"sync"
 	"time"
 )
 
@@ -19,7 +21,6 @@ type SMTPClient interface {
 	Send(ctx context.Context, from, to, subject, body string) error
 	SendHTML(ctx context.Context, from, to, subject, htmlBody string) error
 	SendWithAttachments(ctx context.Context, from, to, subject, body string, attachments []Attachment) error
-	SendBulk(ctx context.Context, messages []EmailRequest) []EmailResponse
 	IsConnected() bool
 }
 
@@ -27,8 +28,7 @@ type SMTPClient interface {
 func NewClient(config Config) SMTPClient {
 	return &smtpClient{
 		config:        config,
-		clientPool:    make([]*smtp.Client, 0, config.PoolSize),
-		poolMutex:     &sync.Mutex{},
+		clientPool:    make(chan *smtp.Client, config.PoolSize),
 		retryAttempts: config.RetryAttempts,
 		retryDelay:    config.RetryDelay,
 	}
@@ -38,15 +38,14 @@ func NewClient(config Config) SMTPClient {
 type smtpClient struct {
 	config        Config
 	client        *smtp.Client // Used for single connections
-	clientPool    []*smtp.Client
-	poolMutex     *sync.Mutex
+	clientPool    chan *smtp.Client
 	retryAttempts int
 	retryDelay    time.Duration
 }
 
 // IsConnected checks if the client is connected
 func (c *smtpClient) IsConnected() bool {
-	if len(c.clientPool) > 0 {
+	if c.clientPool != nil && cap(c.clientPool) > 0 && len(c.clientPool) > 0 {
 		return true
 	}
 	return c.client != nil
@@ -70,27 +69,32 @@ func (c *smtpClient) Connect() error {
 
 // initializePool creates a pool of SMTP connections
 func (c *smtpClient) initializePool() error {
-	c.poolMutex.Lock()
-	defer c.poolMutex.Unlock()
-
-	// Clear any existing connections
-	for _, client := range c.clientPool {
-		client.Close()
+	// Clear existing pool if it exists
+	if c.clientPool != nil {
+		close(c.clientPool)
 	}
-	c.clientPool = make([]*smtp.Client, 0, c.config.PoolSize)
+	
+	// Create a new pool
+	c.clientPool = make(chan *smtp.Client, c.config.PoolSize)
 
 	// Create new connections
 	for i := 0; i < c.config.PoolSize; i++ {
 		client, err := c.createConnection()
 		if err != nil {
-			// Close already created connections
-			for _, existingClient := range c.clientPool {
-				existingClient.Close()
+			// Close the pool and any clients already created
+			for i := 0; i < len(c.clientPool); i++ {
+				select {
+				case client := <-c.clientPool:
+					client.Close()
+				default:
+					break
+				}
 			}
+			close(c.clientPool)
 			c.clientPool = nil
 			return fmt.Errorf("failed to initialize connection pool, connection %d failed: %w", i, err)
 		}
-		c.clientPool = append(c.clientPool, client)
+		c.clientPool <- client
 	}
 
 	return nil
@@ -98,42 +102,36 @@ func (c *smtpClient) initializePool() error {
 
 // getClientFromPool gets an available client from the pool
 func (c *smtpClient) getClientFromPool() (*smtp.Client, error) {
-	c.poolMutex.Lock()
-	defer c.poolMutex.Unlock()
-
-	if len(c.clientPool) == 0 {
+	// Get a client from the pool
+	var client *smtp.Client
+	select {
+	case client = <-c.clientPool:
+		// Check if the connection is still alive
+		if err := client.Noop(); err != nil {
+			// Connection is dead, create a new one
+			log.Printf("SMTP connection health check failed: %v, creating new connection", err)
+			newClient, err := c.createConnection()
+			if err != nil {
+				return nil, fmt.Errorf("failed to create new connection: %w", err)
+			}
+			client = newClient
+		}
+		return client, nil
+	default:
 		return nil, errors.New("no connections available in the pool")
 	}
-
-	// Get a client from the pool
-	client := c.clientPool[0]
-	c.clientPool = c.clientPool[1:]
-
-	// Check if the connection is still alive
-	if err := client.Noop(); err != nil {
-		// Connection is dead, create a new one
-		newClient, err := c.createConnection()
-		if err != nil {
-			return nil, fmt.Errorf("failed to create new connection: %w", err)
-		}
-		client = newClient
-	}
-
-	return client, nil
 }
 
 // returnClientToPool returns a client to the pool
 func (c *smtpClient) returnClientToPool(client *smtp.Client) {
-	c.poolMutex.Lock()
-	defer c.poolMutex.Unlock()
-
-	// If the pool is full, close the client
-	if len(c.clientPool) >= c.config.PoolSize {
+	// Try to return to the pool, but don't block if full
+	select {
+	case c.clientPool <- client:
+		// Successfully returned to pool
+	default:
+		// Pool is full, close the client
 		client.Close()
-		return
 	}
-
-	c.clientPool = append(c.clientPool, client)
 }
 
 // connectSingle establishes a single connection
@@ -151,8 +149,8 @@ func (c *smtpClient) createConnection() (*smtp.Client, error) {
 	// Format server address
 	addr := fmt.Sprintf("%s:%s", c.config.Host, c.config.Port)
 	
-	// Debug: Print SMTP configuration
-	fmt.Printf("DEBUG: SMTP Config - Host: %s, Port: %s\n", c.config.Host, c.config.Port)
+	// Debug: Log SMTP configuration
+	log.Printf("SMTP Config - Host: %s, Port: %s", c.config.Host, c.config.Port)
 
 	// Connect to the SMTP server
 	var client *smtp.Client
@@ -164,8 +162,8 @@ func (c *smtpClient) createConnection() (*smtp.Client, error) {
 	}
 
 	if c.config.UseTLS {
-		// Debug: Print TLS connection info
-		fmt.Printf("DEBUG: Connecting with TLS to %s\n", addr)
+		// Debug: Log TLS connection info
+		log.Printf("Connecting with TLS to %s", addr)
 		
 		// Connect with TLS
 		tlsConfig := &tls.Config{
@@ -174,31 +172,31 @@ func (c *smtpClient) createConnection() (*smtp.Client, error) {
 		}
 		conn, err := tls.DialWithDialer(dialer, "tcp", addr, tlsConfig)
 		if err != nil {
-			fmt.Printf("DEBUG: TLS connection error: %v\n", err)
+			log.Printf("TLS connection error: %v", err)
 			return nil, fmt.Errorf("failed to connect to SMTP server with TLS: %w", err)
 		}
 		client, err = smtp.NewClient(conn, c.config.Host)
 	} else {
-		// Debug: Print non-TLS connection info
-		fmt.Printf("DEBUG: Connecting without TLS to %s\n", addr)
+		// Debug: Log non-TLS connection info
+		log.Printf("Connecting without TLS to %s", addr)
 		
 		// Connect without TLS
 		conn, err := dialer.Dial("tcp", addr)
 		if err != nil {
-			fmt.Printf("DEBUG: Connection error: %v\n", err)
+			log.Printf("Connection error: %v", err)
 			return nil, fmt.Errorf("failed to connect to SMTP server: %w", err)
 		}
 		client, err = smtp.NewClient(conn, c.config.Host)
 
 		// Start TLS if required
 		if c.config.StartTLS {
-			fmt.Printf("DEBUG: Starting TLS after connection\n")
+			log.Printf("Starting TLS after connection")
 			tlsConfig := &tls.Config{
 				ServerName:         c.config.Host,
 				InsecureSkipVerify: c.config.InsecureSkipVerify,
 			}
 			if err = client.StartTLS(tlsConfig); err != nil {
-				fmt.Printf("DEBUG: StartTLS error: %v\n", err)
+				log.Printf("StartTLS error: %v", err)
 				client.Close()
 				return nil, fmt.Errorf("failed to start TLS: %w", err)
 			}
@@ -206,23 +204,23 @@ func (c *smtpClient) createConnection() (*smtp.Client, error) {
 	}
 
 	if err != nil {
-		fmt.Printf("DEBUG: Client creation error: %v\n", err)
+		log.Printf("Client creation error: %v", err)
 		return nil, fmt.Errorf("failed to connect to SMTP server: %w", err)
 	}
 
 	// Authenticate if credentials are provided
 	if c.config.Username != "" && c.config.Password != "" {
-		fmt.Printf("DEBUG: Authenticating with username: %s\n", c.config.Username)
+		log.Printf("Authenticating with username: %s", c.config.Username)
 		auth := smtp.PlainAuth("", c.config.Username, c.config.Password, c.config.Host)
 		if err := client.Auth(auth); err != nil {
-			fmt.Printf("DEBUG: Authentication error: %v\n", err)
+			log.Printf("Authentication error: %v", err)
 			client.Close()
 			return nil, fmt.Errorf("SMTP authentication failed: %w", err)
 		}
-		fmt.Printf("DEBUG: Authentication successful\n")
+		log.Printf("Authentication successful")
 	}
 
-	fmt.Printf("DEBUG: SMTP connection established successfully\n")
+	log.Printf("SMTP connection established successfully")
 	return client, nil
 }
 
@@ -231,17 +229,24 @@ func (c *smtpClient) Disconnect() error {
 	var lastErr error
 
 	// Close the connection pool if it exists
-	if len(c.clientPool) > 0 {
-		c.poolMutex.Lock()
-		for _, client := range c.clientPool {
-			if err := client.Quit(); err != nil {
-				lastErr = fmt.Errorf("failed to disconnect from SMTP server: %w", err)
+	if c.clientPool != nil && cap(c.clientPool) > 0 {
+		// Drain and close all clients in the pool
+		for {
+			select {
+			case client := <-c.clientPool:
+				if err := client.Quit(); err != nil {
+					lastErr = fmt.Errorf("failed to disconnect from SMTP server: %w", err)
+				}
+			default:
+				// Pool is empty
+				close(c.clientPool)
+				c.clientPool = nil
+				goto CleanupSingleClient
 			}
 		}
-		c.clientPool = nil
-		c.poolMutex.Unlock()
 	}
 
+CleanupSingleClient:
 	// Close the single client if it exists
 	if c.client != nil {
 		err := c.client.Quit()
@@ -291,57 +296,6 @@ func (c *smtpClient) SendWithAttachments(ctx context.Context, from, to, subject,
 	return c.sendWithRetry(ctx, req)
 }
 
-// SendBulk sends multiple emails concurrently
-func (c *smtpClient) SendBulk(ctx context.Context, messages []EmailRequest) []EmailResponse {
-	responses := make([]EmailResponse, len(messages))
-	var wg sync.WaitGroup
-
-	// Use a semaphore to limit concurrent goroutines
-	semaphore := make(chan struct{}, c.config.MaxConcurrent)
-
-	for i, msg := range messages {
-		wg.Add(1)
-		semaphore <- struct{}{} // Acquire semaphore
-
-		go func(idx int, email EmailRequest) {
-			defer wg.Done()
-			defer func() { <-semaphore }() // Release semaphore
-
-			var err error
-			// Use retry mechanism
-			for attempt := 0; attempt <= c.retryAttempts; attempt++ {
-				select {
-				case <-ctx.Done():
-					responses[idx] = EmailResponse{
-						Success: false,
-						Error:   "context cancelled",
-					}
-					return
-				default:
-					if attempt > 0 && c.retryDelay > 0 {
-						time.Sleep(c.retryDelay)
-					}
-
-					err = c.sendEmail(ctx, email)
-					if err == nil {
-						responses[idx] = EmailResponse{Success: true}
-						return
-					}
-				}
-			}
-
-			// All attempts failed
-			responses[idx] = EmailResponse{
-				Success: false,
-				Error:   err.Error(),
-			}
-		}(i, msg)
-	}
-
-	wg.Wait()
-	return responses
-}
-
 // sendWithRetry attempts to send an email with retries
 func (c *smtpClient) sendWithRetry(ctx context.Context, req EmailRequest) error {
 	var lastErr error
@@ -360,6 +314,7 @@ func (c *smtpClient) sendWithRetry(ctx context.Context, req EmailRequest) error 
 				return nil
 			}
 			lastErr = err
+			log.Printf("Email send attempt %d failed: %v", attempt+1, err)
 		}
 	}
 
@@ -450,61 +405,114 @@ func (c *smtpClient) sendEmail(ctx context.Context, req EmailRequest) error {
 
 // Helper functions to build email content
 func buildPlainEmail(from, to, subject, body string) string {
-	return fmt.Sprintf(
-		"From: %s\r\n"+
-			"To: %s\r\n"+
-			"Subject: %s\r\n"+
-			"Content-Type: text/plain; charset=UTF-8\r\n\r\n"+
-			"%s",
-		from, to, subject, body)
+	fromAddr := parseAddress(from)
+	toAddr := parseAddress(to)
+	
+	header := make(map[string]string)
+	header["From"] = fromAddr
+	header["To"] = toAddr
+	header["Subject"] = subject
+	header["Content-Type"] = "text/plain; charset=UTF-8"
+	
+	return buildMessage(header, body)
 }
 
 func buildHTMLEmail(from, to, subject, htmlBody string) string {
-	return fmt.Sprintf(
-		"From: %s\r\n"+
-			"To: %s\r\n"+
-			"Subject: %s\r\n"+
-			"MIME-Version: 1.0\r\n"+
-			"Content-Type: text/html; charset=UTF-8\r\n\r\n"+
-			"%s",
-		from, to, subject, htmlBody)
+	fromAddr := parseAddress(from)
+	toAddr := parseAddress(to)
+	
+	header := make(map[string]string)
+	header["From"] = fromAddr
+	header["To"] = toAddr
+	header["Subject"] = subject
+	header["MIME-Version"] = "1.0"
+	header["Content-Type"] = "text/html; charset=UTF-8"
+	
+	return buildMessage(header, htmlBody)
 }
 
 func buildMultipartEmail(from, to, subject, body string, attachments []Attachment) string {
 	// Generate a boundary string
 	boundary := fmt.Sprintf("_boundary_%d", time.Now().UnixNano())
 
-	// Build the MIME multipart message
-	var builder strings.Builder
-
-	// Add headers
-	builder.WriteString(fmt.Sprintf("From: %s\r\n", from))
-	builder.WriteString(fmt.Sprintf("To: %s\r\n", to))
-	builder.WriteString(fmt.Sprintf("Subject: %s\r\n", subject))
-	builder.WriteString("MIME-Version: 1.0\r\n")
-	builder.WriteString(fmt.Sprintf("Content-Type: multipart/mixed; boundary=%s\r\n\r\n", boundary))
+	// Create buffer for multipart message
+	var buf strings.Builder
+	
+	// Set up headers
+	fromAddr := parseAddress(from)
+	toAddr := parseAddress(to)
+	
+	// Write the headers
+	buf.WriteString(fmt.Sprintf("From: %s\r\n", fromAddr))
+	buf.WriteString(fmt.Sprintf("To: %s\r\n", toAddr))
+	buf.WriteString(fmt.Sprintf("Subject: %s\r\n", subject))
+	buf.WriteString("MIME-Version: 1.0\r\n")
+	buf.WriteString(fmt.Sprintf("Content-Type: multipart/mixed; boundary=%s\r\n\r\n", boundary))
 
 	// Add text part
-	builder.WriteString(fmt.Sprintf("--%s\r\n", boundary))
-	builder.WriteString("Content-Type: text/plain; charset=UTF-8\r\n\r\n")
-	builder.WriteString(body)
-	builder.WriteString("\r\n\r\n")
+	buf.WriteString(fmt.Sprintf("--%s\r\n", boundary))
+	buf.WriteString("Content-Type: text/plain; charset=UTF-8\r\n\r\n")
+	buf.WriteString(body)
+	buf.WriteString("\r\n\r\n")
 
 	// Add attachments
 	for _, att := range attachments {
-		builder.WriteString(fmt.Sprintf("--%s\r\n", boundary))
-		builder.WriteString(fmt.Sprintf("Content-Type: %s\r\n", att.MimeType))
-		builder.WriteString("Content-Transfer-Encoding: base64\r\n")
-		builder.WriteString(fmt.Sprintf("Content-Disposition: attachment; filename=%s\r\n\r\n", att.Filename))
+		buf.WriteString(fmt.Sprintf("--%s\r\n", boundary))
+		buf.WriteString(fmt.Sprintf("Content-Type: %s\r\n", att.MimeType))
+		buf.WriteString("Content-Transfer-Encoding: base64\r\n")
+		buf.WriteString(fmt.Sprintf("Content-Disposition: attachment; filename=%s\r\n\r\n", att.Filename))
 
-		// TODO: Convert attachment content to base64
-		// This is a simplified version; you'd need to add base64 encoding
-		builder.WriteString("[BASE64_ENCODED_CONTENT]")
-		builder.WriteString("\r\n\r\n")
+		// Base64 encode the attachment content
+		encoded := base64.StdEncoding.EncodeToString(att.Content)
+		
+		// Write in lines of 76 characters as per RFC 2045
+		for i := 0; i < len(encoded); i += 76 {
+			end := i + 76
+			if end > len(encoded) {
+				end = len(encoded)
+			}
+			buf.WriteString(encoded[i:end])
+			buf.WriteString("\r\n")
+		}
+		buf.WriteString("\r\n")
 	}
 
 	// Close the MIME multipart message
-	builder.WriteString(fmt.Sprintf("--%s--\r\n", boundary))
+	buf.WriteString(fmt.Sprintf("--%s--\r\n", boundary))
 
-	return builder.String()
+	return buf.String()
+}
+
+// Helper function to build a message with headers
+func buildMessage(header map[string]string, body string) string {
+	var buf strings.Builder
+	
+	// Add headers
+	for key, value := range header {
+		buf.WriteString(fmt.Sprintf("%s: %s\r\n", key, value))
+	}
+	
+	// Add separator between headers and body
+	buf.WriteString("\r\n")
+	
+	// Add body
+	buf.WriteString(body)
+	
+	return buf.String()
+}
+
+// Helper function to parse email addresses
+func parseAddress(addr string) string {
+	// If already properly formatted or empty, return as is
+	if addr == "" || strings.HasPrefix(addr, "<") && strings.HasSuffix(addr, ">") {
+		return addr
+	}
+	
+	// Parse and format the email address
+	if a, err := mail.ParseAddress(addr); err == nil {
+		return a.String()
+	}
+	
+	// Fallback to original address if parsing fails
+	return addr
 }
