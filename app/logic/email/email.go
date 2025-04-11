@@ -40,7 +40,7 @@ func NewEmailService(cfg *config.Config, repo repository.Repository) Email {
 	fmt.Printf("  Port: %s\n", cfg.SMTP.Port)
 	fmt.Printf("  Username: %s\n", cfg.SMTP.Username)
 	fmt.Printf("  From: %s\n", cfg.SMTP.From)
-	fmt.Printf("  TLS Enabled: %v\n", cfg.SMTP.TLSEnable)
+	fmt.Printf("  TLS Enabled: %v\n", cfg.SMTP.UseStartTLS)
 	
 	// Create SMTP config from application config
 	smtpConfig := smtp.Config{
@@ -50,7 +50,7 @@ func NewEmailService(cfg *config.Config, repo repository.Repository) Email {
 		Password:           cfg.SMTP.Password,
 		From:               cfg.SMTP.From,
 		UseTLS:             false,     // Don't use immediate TLS
-		StartTLS:           true,      // Use StartTLS for encryption
+		StartTLS:           cfg.SMTP.UseStartTLS,
 		InsecureSkipVerify: true,      // Skip verification for testing
 		ConnectTimeout:     10 * time.Second,
 		PoolSize:           5,
