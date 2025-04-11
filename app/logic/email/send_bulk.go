@@ -17,9 +17,11 @@ func (s *emailService) SendBulk(ctx context.Context, req SendBulkEmailRequest) (
 	var wg sync.WaitGroup
 	wg.Add(len(req.Emails))
 
-	// Set a limit on the number of concurrent requests
-	// Default to 5 concurrent connections
+	// Get max concurrent from config, with a default fallback
 	maxConcurrent := 5
+	if s.config.SMTP.MaxConcurrent > 0 {
+		maxConcurrent = s.config.SMTP.MaxConcurrent
+	}
 	
 	// Create a semaphore using a channel
 	semaphore := make(chan struct{}, maxConcurrent)
@@ -75,16 +77,7 @@ func (s *emailService) SendBulk(ctx context.Context, req SendBulkEmailRequest) (
 			}
 			
 			// Log the email asynchronously
-			if s.repo != nil {
-				go func() {
-					// Create a new context for the async operation
-					asyncCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-					defer cancel()
-					
-					// Log the email
-					_ = s.repo.SaveEmailLog(asyncCtx, emailLog)
-				}()
-			}
+			s.logEmailAttempt(emailLog)
 		}(i, email)
 	}
 	
