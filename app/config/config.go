@@ -51,12 +51,12 @@ type MongoDBConfig struct {
 
 // SMTPConfig holds SMTP server configuration
 type SMTPConfig struct {
-	Host      string `yaml:"host" json:"host"`
-	Port      string `yaml:"port" json:"port"`
-	Username  string `yaml:"username" json:"username"`
-	Password  string `yaml:"password" json:"password"`
-	From      string `yaml:"from" json:"from"`
-	TLSEnable bool   `yaml:"tlsEnable" json:"tlsEnable"`
+	Host        string `yaml:"host" json:"host"`
+	Port        string `yaml:"port" json:"port"`
+	Username    string `yaml:"username" json:"username"`
+	Password    string `yaml:"password" json:"password"`
+	From        string `yaml:"from" json:"from"`
+	UseStartTLS bool   `yaml:"useStartTLS" json:"useStartTLS"`
 }
 
 // JWTConfig holds JWT authentication configuration
@@ -86,9 +86,9 @@ type ServiceConfig struct {
 var config *Config
 
 // Init initializes the configuration
-func Init() {
+func Init() (*Config, error) {
 	if err := loadConfig(); err != nil {
-		panic(err)
+		return nil, err
 	}
 
 	env := os.Getenv(envKey)
@@ -99,35 +99,18 @@ func Init() {
 	// Check if we're in a production or staging environment
 	if isProduction() || isStaging() {
 		if err := overwriteConfigFromEnv(); err != nil {
-			panic(err)
-		}
-	}
-
-	// Initialize MongoDB connection
-	initMongoDB()
-}
-
-// Load loads configuration and returns it
-func Load() (*Config, error) {
-	if config == nil {
-		if err := loadConfig(); err != nil {
 			return nil, err
 		}
-
-		env := os.Getenv(envKey)
-		if env != "" {
-			config.Env = env
-		}
-
+	} else {
 		// Always apply environment variables if they exist
 		if err := overwriteConfigFromEnv(); err != nil {
 			return nil, err
 		}
+	}
 
-		// Initialize MongoDB connection
-		if err := initMongoDB(); err != nil {
-			return nil, err
-		}
+	// Initialize MongoDB connection
+	if err := initMongoDB(); err != nil {
+		return nil, err
 	}
 	
 	return config, nil
@@ -146,8 +129,7 @@ func loadConfig() error {
 	}
 	
 	config = &Config{}
-	err = yaml.Unmarshal(yamlFile, config)
-	if err != nil {
+	if err := yaml.Unmarshal(yamlFile, config); err != nil {
 		return err
 	}
 	
@@ -196,6 +178,9 @@ func overwriteConfigFromEnv() error {
 	}
 	if from := os.Getenv("SMTP_FROM"); from != "" {
 		config.SMTP.From = from
+	}
+	if useStartTLSStr := os.Getenv("SMTP_USE_STARTTLS"); useStartTLSStr != "" {
+		config.SMTP.UseStartTLS = useStartTLSStr == "true" || useStartTLSStr == "1" || useStartTLSStr == "yes"
 	}
 	
 	// JWT config
@@ -252,7 +237,7 @@ func initMongoDB() error {
 // Get returns the current configuration
 func Get() *Config {
 	if config == nil {
-		panic("Configuration not loaded. Call Init() or Load() first!")
+		panic("Configuration not loaded. Call Init() first!")
 	}
 	return config
 }
@@ -278,7 +263,3 @@ func isProduction() bool {
 func isStaging() bool {
 	return config.Env == "stg" || config.Env == "staging"
 }
-
-func isDevelopment() bool {
-	return config.Env == "dev" || config.Env == "development" || config.Env == ""
-} 

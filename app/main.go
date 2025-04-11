@@ -15,8 +15,10 @@ import (
 
 func main() {
 	// Initialize configuration
-	config.Init()
-	cfg := config.Get()
+	cfg, err := config.Init()
+	if err != nil {
+		log.Fatalf("Failed to initialize configuration: %v", err)
+	}
 
 	// Setup server
 	srv := server.New(cfg)

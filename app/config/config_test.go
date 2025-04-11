@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-func TestLoad(t *testing.T) {
+func TestInit(t *testing.T) {
 	// Create a temporary config file for testing
 	tempConfigContent := `
 env: development
@@ -30,7 +30,7 @@ smtp:
   username: "example@example.com"
   password: "example_password"
   from: "no-reply@example.com"
-  tlsEnable: true
+  useStartTLS: true
 jwt:
   secret: "your_jwt_secret_key_change_in_production"
   expiresIn: 24h
@@ -65,15 +65,19 @@ services:
 	os.Setenv("PORT", "9090")
 	os.Setenv("MONGODB_URI", "mongodb://localhost:27017")
 	os.Setenv("JWT_SECRET", "test_secret")
+	os.Setenv("SMTP_USE_STARTTLS", "false")
 	os.Setenv("GOMAIL_ENV", "development") // Make sure we're in development mode
 	
 	// Point to the test config file
 	os.Setenv("CONFIG_PATH", tempConfigFile)
 	
-	// Load the configuration
-	cfg, err := Load()
+	// Reset the config to make sure we're testing from a clean state
+	config = nil
+	
+	// Initialize the configuration
+	cfg, err := Init()
 	if err != nil {
-		t.Fatalf("Failed to load configuration: %v", err)
+		t.Fatalf("Failed to initialize configuration: %v", err)
 	}
 	
 	// Make sure we clean up the MongoDB connection after the test
@@ -100,8 +104,19 @@ services:
 		t.Errorf("Expected JWT Secret to be 'test_secret', got '%s'", cfg.JWT.Secret)
 	}
 	
+	// Verify that SMTP_USE_STARTTLS environment variable is applied
+	if cfg.SMTP.UseStartTLS {
+		t.Errorf("Expected SMTP UseStartTLS to be false, got true")
+	}
+	
 	// Verify MongoDB connection was established
 	if cfg.MongoDB.Client == nil {
 		t.Error("MongoDB client was not initialized")
+	}
+	
+	// Test Get() function
+	configFromGet := Get()
+	if configFromGet != cfg {
+		t.Error("Get() did not return the expected config instance")
 	}
 } 
