@@ -1,7 +1,6 @@
 package email
 
 import (
-	"context"
 	"net/http"
 
 	"GoMail/app/logic/email"
@@ -29,7 +28,7 @@ func (h *Handler) sendEmail(c *gin.Context) {
 		return
 	}
 
-	resp, err := h.emailService.Send(context.Background(), req)
+	resp, err := h.emailService.Send(c.Request.Context(), req)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -46,7 +45,7 @@ func (h *Handler) sendHTMLEmail(c *gin.Context) {
 		return
 	}
 
-	resp, err := h.emailService.SendHTML(context.Background(), req)
+	resp, err := h.emailService.SendHTML(c.Request.Context(), req)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -63,7 +62,7 @@ func (h *Handler) sendEmailWithAttachments(c *gin.Context) {
 		return
 	}
 
-	resp, err := h.emailService.SendWithAttachments(context.Background(), req)
+	resp, err := h.emailService.SendWithAttachments(c.Request.Context(), req)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -80,7 +79,7 @@ func (h *Handler) sendBulkEmails(c *gin.Context) {
 		return
 	}
 
-	resp, err := h.emailService.SendBulk(context.Background(), req)
+	resp, err := h.emailService.SendBulk(c.Request.Context(), req)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return

@@ -9,18 +9,19 @@ import (
 )
 
 // InitPublicRoutes initializes routes that don't require authentication
-func InitPublicRoutes(router *gin.Engine) {
+func InitPublicRoutes(router *gin.Engine, emailHandler *email.Handler) {
 	api := router.Group("/api/v1")
 	
 	// Register public routes
 	auth.AddRoute(api, "/auth")
+	email.AddPublicRoute(api, "/email", emailHandler)
 }
 
 // InitProtectedRoutes initializes routes that require authentication
-func InitProtectedRoutes(router *gin.Engine) {
+func InitProtectedRoutes(router *gin.Engine, emailHandler *email.Handler) {
 	api := router.Group("/api/v1")
 	api.Use(middleware.VerifyAuthToken())
 	
 	// Register protected routes
-	email.AddProtectedRoute(api, "/email")
+	email.AddProtectedRoute(api, "/email", emailHandler)
 }
